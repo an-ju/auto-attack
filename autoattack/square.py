@@ -63,11 +63,12 @@ class SquareAttack():
         self.rescale_schedule = resc_schedule
         self.device = device
 
-    def margin_and_loss(self, x, y):
+    def margin_and_loss(self, x, y, init_x, adv_mask):
         """
         :param y:        correct labels if untargeted else target labels
         """
 
+        x.data[adv_mask] = init_x.data[adv_mask]
         logits = self.predict(x)
         xent = F.cross_entropy(logits, y, reduction='none')
         u = torch.arange(x.shape[0])
@@ -186,7 +187,7 @@ class SquareAttack():
 
         return p
 
-    def attack_single_run(self, x, y):
+    def attack_single_run(self, x, y, adv_mask):
         with torch.no_grad():
             adv = x.clone()
             c, h, w = x.shape[1:]
@@ -196,7 +197,7 @@ class SquareAttack():
             if self.norm == 'Linf':
                 x_best = torch.clamp(x + self.eps * self.random_choice(
                     [x.shape[0], c, 1, w]), 0., 1.)
-                margin_min, loss_min = self.margin_and_loss(x_best, y)
+                margin_min, loss_min = self.margin_and_loss(x_best, y, x, adv_mask)
                 n_queries = torch.ones(x.shape[0]).to(self.device)
                 s_init = int(math.sqrt(self.p_init * n_features / c))
                 
@@ -206,6 +207,7 @@ class SquareAttack():
                     x_curr = self.check_shape(x[idx_to_fool])
                     x_best_curr = self.check_shape(x_best[idx_to_fool])
                     y_curr = y[idx_to_fool]
+                    curr_adv_mask = adv_mask[idx_to_fool]
                     if len(y_curr.shape) == 0:
                         y_curr = y_curr.unsqueeze(0)
                     margin_min_curr = margin_min[idx_to_fool]
@@ -225,7 +227,7 @@ class SquareAttack():
                     x_new = torch.clamp(x_new, 0., 1.)
                     x_new = self.check_shape(x_new)
                     
-                    margin, loss = self.margin_and_loss(x_new, y_curr)
+                    margin, loss = self.margin_and_loss(x_new, y_curr, x[idx_to_fool], curr_adv_mask)
 
                     # update loss if new loss is better
                     idx_improved = (loss < loss_min_curr).float()
@@ -277,7 +279,7 @@ class SquareAttack():
 
                 x_best = torch.clamp(x + self.normalize(delta_init
                     ) * self.eps, 0., 1.)
-                margin_min, loss_min = self.margin_and_loss(x_best, y)
+                margin_min, loss_min = self.margin_and_loss(x_best, y, x[idx_to_fool], curr_adv_mask)
                 n_queries = torch.ones(x.shape[0]).to(self.device)
                 s_init = int(math.sqrt(self.p_init * n_features / c))
 
@@ -289,6 +291,7 @@ class SquareAttack():
                     y_curr = y[idx_to_fool]
                     if len(y_curr.shape) == 0:
                         y_curr = y_curr.unsqueeze(0)
+                    curr_adv_mask = adv_mask[idx_to_fool]
                     margin_min_curr = margin_min[idx_to_fool]
                     loss_min_curr = loss_min[idx_to_fool]
 
@@ -334,7 +337,7 @@ class SquareAttack():
                     x_new = self.check_shape(x_new)
                     norms_image = self.lp_norm(x_new - x_curr)
 
-                    margin, loss = self.margin_and_loss(x_new, y_curr)
+                    margin, loss = self.margin_and_loss(x_new, y_curr, x[idx_to_fool][curr_adv_mask])
 
                     # update loss if new loss is better
                     idx_improved = (loss < loss_min_curr).float()
@@ -375,7 +378,7 @@ class SquareAttack():
 
         return n_queries, x_best
 
-    def perturb(self, x, y=None):
+    def perturb(self, x, y=None, adv_mask=None):
         """
         :param x:           clean images
         :param y:           untargeted attack -> clean labels,
@@ -419,8 +422,9 @@ class SquareAttack():
             if ind_to_fool.numel() != 0:
                 x_to_fool = x[ind_to_fool].clone()
                 y_to_fool = y[ind_to_fool].clone()
+                adv_mask_i = adv_mask[ind_to_fool]
 
-                _, adv_curr = self.attack_single_run(x_to_fool, y_to_fool)
+                _, adv_curr = self.attack_single_run(x_to_fool, y_to_fool, adv_mask_i)
 
                 output_curr = self.predict(adv_curr)
                 if not self.targeted:

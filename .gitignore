@@ -1,0 +1,5 @@
+autoattack/examples*
+data/*
+results/*
+.vscode/*
+*.pyc

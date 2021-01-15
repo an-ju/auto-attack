@@ -32,7 +32,7 @@ class APGDAttack():
     def check_oscillation(self, x, j, k, y5, k3=0.75):
         t = np.zeros(x.shape[1])
         for counter5 in range(k):
-          t += x[j - counter5] > x[j - counter5 - 1]
+            t += x[j - counter5] > x[j - counter5 - 1]
           
         return t <= k*k3*np.ones(t.shape)
         
@@ -45,7 +45,7 @@ class APGDAttack():
         
         return -(x[np.arange(x.shape[0]), y] - x_sorted[:, -2] * ind - x_sorted[:, -1] * (1. - ind)) / (x_sorted[:, -1] - x_sorted[:, -3] + 1e-12)
     
-    def attack_single_run(self, x_in, y_in):
+    def attack_single_run(self, x_in, y_in, adv_mask):
         x = x_in.clone() if len(x_in.shape) == 4 else x_in.clone().unsqueeze(0)
         y = y_in.clone() if len(y_in.shape) == 1 else y_in.clone().unsqueeze(0)
         
@@ -60,6 +60,7 @@ class APGDAttack():
             t = torch.randn(x.shape).to(self.device).detach()
             x_adv = x.detach() + self.eps * torch.ones([x.shape[0], 1, 1, 1]).to(self.device).detach() * t / ((t ** 2).sum(dim=(1, 2, 3), keepdim=True).sqrt() + 1e-12)
         x_adv = x_adv.clamp(0., 1.)
+        x_adv.data[adv_mask] = x.data[adv_mask]
         x_best = x_adv.clone()
         x_best_adv = x_adv.clone()
         loss_steps = torch.zeros([self.n_iter, x.shape[0]])
@@ -124,7 +125,7 @@ class APGDAttack():
                         self.eps * torch.ones(x.shape).to(self.device).detach(), ((x_adv_1 - x) ** 2).sum(dim=(1, 2, 3), keepdim=True).sqrt() + 1e-12), 0.0, 1.0)
                     
                 x_adv = x_adv_1 + 0.
-            
+            x_adv.data[adv_mask] = x.data[adv_mask]
             ### get gradient
             x_adv.requires_grad_()
             grad = torch.zeros_like(x)
@@ -148,38 +149,38 @@ class APGDAttack():
             
             ### check step size
             with torch.no_grad():
-              y1 = loss_indiv.detach().clone()
-              loss_steps[i] = y1.cpu() + 0
-              ind = (y1 > loss_best).nonzero().squeeze()
-              x_best[ind] = x_adv[ind].clone()
-              grad_best[ind] = grad[ind].clone()
-              loss_best[ind] = y1[ind] + 0
-              loss_best_steps[i + 1] = loss_best + 0
-              
-              counter3 += 1
-          
-              if counter3 == k:
-                  fl_oscillation = self.check_oscillation(loss_steps.detach().cpu().numpy(), i, k, loss_best.detach().cpu().numpy(), k3=self.thr_decr)
-                  fl_reduce_no_impr = (~reduced_last_check) * (loss_best_last_check.cpu().numpy() >= loss_best.cpu().numpy())
-                  fl_oscillation = ~(~fl_oscillation * ~fl_reduce_no_impr)
-                  reduced_last_check = np.copy(fl_oscillation)
-                  loss_best_last_check = loss_best.clone()
-                  
-                  if np.sum(fl_oscillation) > 0:
-                      step_size[u[fl_oscillation]] /= 2.0
-                      n_reduced = fl_oscillation.astype(float).sum()
-                      
-                      fl_oscillation = np.where(fl_oscillation)
-                      
-                      x_adv[fl_oscillation] = x_best[fl_oscillation].clone()
-                      grad[fl_oscillation] = grad_best[fl_oscillation].clone()
-                      
-                  counter3 = 0
-                  k = np.maximum(k - self.size_decr, self.n_iter_min)
+                y1 = loss_indiv.detach().clone()
+                loss_steps[i] = y1.cpu() + 0
+                ind = (y1 > loss_best).nonzero().squeeze()
+                x_best[ind] = x_adv[ind].clone()
+                grad_best[ind] = grad[ind].clone()
+                loss_best[ind] = y1[ind] + 0
+                loss_best_steps[i + 1] = loss_best + 0
+                
+                counter3 += 1
+            
+                if counter3 == k:
+                    fl_oscillation = self.check_oscillation(loss_steps.detach().cpu().numpy(), i, k, loss_best.detach().cpu().numpy(), k3=self.thr_decr)
+                    fl_reduce_no_impr = (~reduced_last_check) * (loss_best_last_check.cpu().numpy() >= loss_best.cpu().numpy())
+                    fl_oscillation = ~(~fl_oscillation * ~fl_reduce_no_impr)
+                    reduced_last_check = np.copy(fl_oscillation)
+                    loss_best_last_check = loss_best.clone()
+                    
+                    if np.sum(fl_oscillation) > 0:
+                        step_size[u[fl_oscillation]] /= 2.0
+                        n_reduced = fl_oscillation.astype(float).sum()
+                        
+                        fl_oscillation = np.where(fl_oscillation)
+                        
+                        x_adv[fl_oscillation] = x_best[fl_oscillation].clone()
+                        grad[fl_oscillation] = grad_best[fl_oscillation].clone()
+                        
+                    counter3 = 0
+                    k = np.maximum(k - self.size_decr, self.n_iter_min)
               
         return x_best, acc, loss_best, x_best_adv
     
-    def perturb(self, x_in, y_in, best_loss=False, cheap=True):
+    def perturb(self, x_in, y_in, adv_mask, best_loss=False, cheap=True):
         assert self.norm in ['Linf', 'L2']
         x = x_in.clone() if len(x_in.shape) == 4 else x_in.clone().unsqueeze(0)
         y = y_in.clone() if len(y_in.shape) == 1 else y_in.clone().unsqueeze(0)
@@ -205,7 +206,8 @@ class APGDAttack():
                     if len(ind_to_fool.shape) == 0: ind_to_fool = ind_to_fool.unsqueeze(0)
                     if ind_to_fool.numel() != 0:
                         x_to_fool, y_to_fool = x[ind_to_fool].clone(), y[ind_to_fool].clone()
-                        best_curr, acc_curr, loss_curr, adv_curr = self.attack_single_run(x_to_fool, y_to_fool)
+                        adv_mask_i = adv_mask[ind_to_fool].clone()
+                        best_curr, acc_curr, loss_curr, adv_curr = self.attack_single_run(x_to_fool, y_to_fool, adv_mask_i)
                         ind_curr = (acc_curr == 0).nonzero().squeeze()
                         #
                         acc[ind_to_fool[ind_curr]] = 0
@@ -262,7 +264,7 @@ class APGDAttack_targeted():
         
         return -(x[np.arange(x.shape[0]), y] - x[np.arange(x.shape[0]), y_target]) / (x_sorted[:, -1] - .5 * x_sorted[:, -3] - .5 * x_sorted[:, -4] + 1e-12)
     
-    def attack_single_run(self, x_in, y_in):
+    def attack_single_run(self, x_in, y_in, adv_mask):
         x = x_in.clone() if len(x_in.shape) == 4 else x_in.clone().unsqueeze(0)
         y = y_in.clone() if len(y_in.shape) == 1 else y_in.clone().unsqueeze(0)
         
@@ -277,6 +279,7 @@ class APGDAttack_targeted():
             t = torch.randn(x.shape).to(self.device).detach()
             x_adv = x.detach() + self.eps * torch.ones([x.shape[0], 1, 1, 1]).to(self.device).detach() * t / ((t ** 2).sum(dim=(1, 2, 3), keepdim=True).sqrt() + 1e-12)
         x_adv = x_adv.clamp(0., 1.)
+        x_adv.data[adv_mask] = x.data[adv_mask]
         x_best = x_adv.clone()
         x_best_adv = x_adv.clone()
         loss_steps = torch.zeros([self.n_iter, x.shape[0]])
@@ -338,6 +341,7 @@ class APGDAttack_targeted():
                     
                 x_adv = x_adv_1 + 0.
             
+            x_adv.data[adv_mask] = x.data[adv_mask]
             ### get gradient
             x_adv.requires_grad_()
             grad = torch.zeros_like(x)
@@ -391,7 +395,7 @@ class APGDAttack_targeted():
               
         return x_best, acc, loss_best, x_best_adv
     
-    def perturb(self, x_in, y_in, best_loss=False, cheap=True):
+    def perturb(self, x_in, y_in, adv_mask, best_loss=False, cheap=True):
         assert self.norm in ['Linf', 'L2']
         x = x_in.clone() if len(x_in.shape) == 4 else x_in.clone().unsqueeze(0)
         y = y_in.clone() if len(y_in.shape) == 1 else y_in.clone().unsqueeze(0)
@@ -418,7 +422,8 @@ class APGDAttack_targeted():
                     if len(ind_to_fool.shape) == 0: ind_to_fool = ind_to_fool.unsqueeze(0)
                     if ind_to_fool.numel() != 0:
                         x_to_fool, y_to_fool = x[ind_to_fool].clone(), y[ind_to_fool].clone()
-                        best_curr, acc_curr, loss_curr, adv_curr = self.attack_single_run(x_to_fool, y_to_fool)
+                        adv_mask_i = adv_mask[ind_to_fool]
+                        best_curr, acc_curr, loss_curr, adv_curr = self.attack_single_run(x_to_fool, y_to_fool, adv_mask_i)
                         ind_curr = (acc_curr == 0).nonzero().squeeze()
                         #
                         acc[ind_to_fool[ind_curr]] = 0

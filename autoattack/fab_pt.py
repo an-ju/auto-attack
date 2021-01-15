@@ -117,7 +117,7 @@ class FABAttack():
 
         return df, dg
 
-    def attack_single_run(self, x, y=None, use_rand_start=False):
+    def attack_single_run(self, x, y=None, adv_mask=None, use_rand_start=False):
         """
         :param x:    clean images
         :param y:    clean labels, if None we use the predicted labels
@@ -142,11 +142,14 @@ class FABAttack():
         if pred.sum() == 0:
             return x
         pred = self.check_shape(pred.nonzero().squeeze())
+        if adv_mask is None:
+            adv_mask = torch.ones((x.size(0),), dtype=torch.bool, device=self.device)
 
         startt = time.time()
         # runs the attack only on correctly classified points
         im2 = x[pred].detach().clone()
         la2 = y[pred].detach().clone()
+        adv_mask2 = adv_mask[pred].detach()
         if len(im2.shape) == self.ndims:
             im2 = im2.unsqueeze(0)
         bs = im2.shape[0]
@@ -196,6 +199,7 @@ class FABAttack():
             counter_iter = 0
             while counter_iter < self.n_iter:
                 with torch.no_grad():
+                    x1.data[adv_mask2] = im2.data[adv_mask2]
                     df, dg = self.get_diff_logits_grads_batch(x1, la2)
                     if self.norm == 'Linf':
                         dist1 = df.abs() / (1e-12 +
@@ -255,6 +259,7 @@ class FABAttack():
                     x1 = ((x1 + self.eta * d1) * (1 - alpha) +
                           (im2 + d2 * self.eta) * alpha).clamp(0.0, 1.0)
 
+                    x1.data[adv_mask2] = im2.data[adv_mask2]
                     is_adv = self._get_predicted_label(x1) != la2
 
                     if is_adv.sum() > 0:
@@ -295,7 +300,7 @@ class FABAttack():
 
         return adv_c
 
-    def attack_single_run_targeted(self, x, y=None, use_rand_start=False):
+    def attack_single_run_targeted(self, x, y=None, adv_mask=None, use_rand_start=False):
         """
         :param x:    clean images
         :param y:    clean labels, if None we use the predicted labels
@@ -329,6 +334,7 @@ class FABAttack():
         # runs the attack only on correctly classified points
         im2 = x[pred].detach().clone()
         la2 = y[pred].detach().clone()
+        adv_mask2 = adv_mask[pred].detach()
         la_target2 = la_target[pred].detach().clone()
         if len(im2.shape) == self.ndims:
             im2 = im2.unsqueeze(0)
@@ -379,6 +385,7 @@ class FABAttack():
             counter_iter = 0
             while counter_iter < self.n_iter:
                 with torch.no_grad():
+                    x1.data[adv_mask2] = im2.data[adv_mask2]
                     df, dg = self.get_diff_logits_grads_batch_targeted(x1, la2, la_target2)
                     if self.norm == 'Linf':
                         dist1 = df.abs() / (1e-12 +
@@ -438,6 +445,7 @@ class FABAttack():
                                       .to(self.device))
                     x1 = ((x1 + self.eta * d1) * (1 - alpha) +
                           (im2 + d2 * self.eta) * alpha).clamp(0.0, 1.0)
+                    x1.data[adv_mask2] = im2.data[adv_mask2]
 
                     is_adv = self._get_predicted_label(x1) != la2
 
@@ -479,7 +487,7 @@ class FABAttack():
 
         return adv_c
 
-    def perturb(self, x, y):
+    def perturb(self, x, y, adv_mask):
         adv = x.clone()
         with torch.no_grad():
             acc = self.predict(x).max(1)[1] == y
@@ -495,7 +503,8 @@ class FABAttack():
                     if len(ind_to_fool.shape) == 0: ind_to_fool = ind_to_fool.unsqueeze(0)
                     if ind_to_fool.numel() != 0:
                         x_to_fool, y_to_fool = x[ind_to_fool].clone(), y[ind_to_fool].clone()
-                        adv_curr = self.attack_single_run(x_to_fool, y_to_fool, use_rand_start=(counter > 0))
+                        adv_mask_i = adv_mask[ind_to_fool]
+                        adv_curr = self.attack_single_run(x_to_fool, y_to_fool, adv_mask_i, use_rand_start=(counter > 0))
 
                         acc_curr = self.predict(adv_curr).max(1)[1] == y_to_fool
                         if self.norm == 'Linf':
@@ -520,7 +529,8 @@ class FABAttack():
                         if len(ind_to_fool.shape) == 0: ind_to_fool = ind_to_fool.unsqueeze(0)
                         if ind_to_fool.numel() != 0:
                             x_to_fool, y_to_fool = x[ind_to_fool].clone(), y[ind_to_fool].clone()
-                            adv_curr = self.attack_single_run_targeted(x_to_fool, y_to_fool, use_rand_start=(counter > 0))
+                            adv_mask_i = adv_mask[ind_to_fool]
+                            adv_curr = self.attack_single_run_targeted(x_to_fool, y_to_fool, adv_mask_i, use_rand_start=(counter > 0))
 
                             acc_curr = self.predict(adv_curr).max(1)[1] == y_to_fool
                             if self.norm == 'Linf':

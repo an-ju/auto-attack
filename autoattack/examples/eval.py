@@ -9,7 +9,7 @@ import torchvision.transforms as transforms
 import sys
 sys.path.insert(0,'..')
 
-from resnet import *
+from .resnet import *
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -44,7 +44,7 @@ if __name__ == '__main__':
         os.makedirs(args.save_dir)
     
     # load attack    
-    from autoattack import AutoAttack
+    from ..autoattack import AutoAttack
     adversary = AutoAttack(model, norm=args.norm, eps=args.epsilon, log_path=args.log_path,
         version=args.version)
     
@@ -61,8 +61,11 @@ if __name__ == '__main__':
     
     # run attack and save images
     with torch.no_grad():
+        rand_idx = torch.randperm(args.n_ex)[:int(0.5*args.n_ex)]
+        adv_mask = torch.zeros((args.n_ex,), dtype=torch.bool)
+        adv_mask[rand_idx] = True
         if not args.individual:
-            adv_complete = adversary.run_standard_evaluation(x_test[:args.n_ex], y_test[:args.n_ex],
+            adv_complete = adversary.run_standard_evaluation(x_test[:args.n_ex], y_test[:args.n_ex], adv_mask,
                 bs=args.batch_size)
             
             torch.save({'adv_complete': adv_complete}, '{}/{}_{}_1_{}_eps_{:.5f}.pth'.format(
@@ -71,7 +74,7 @@ if __name__ == '__main__':
         else:
             # individual version, each attack is run on all test points
             adv_complete = adversary.run_standard_evaluation_individual(x_test[:args.n_ex],
-                y_test[:args.n_ex], bs=args.batch_size)
+                y_test[:args.n_ex], adv_mask, bs=args.batch_size)
             
             torch.save(adv_complete, '{}/{}_{}_individual_1_{}_eps_{:.5f}_plus_{}_cheap_{}.pth'.format(
                 args.save_dir, 'aa', args.version, args.n_ex, args.epsilon))

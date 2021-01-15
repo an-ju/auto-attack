@@ -69,7 +69,7 @@ class AutoAttack():
     def get_seed(self):
         return time.time() if self.seed is None else self.seed
     
-    def run_standard_evaluation(self, x_orig, y_orig, bs=250):
+    def run_standard_evaluation(self, x_orig, y_orig, mask_orig, bs=250):
         if self.verbose:
             print('using {} version including {}'.format(self.version,
                 ', '.join(self.attacks_to_run)))
@@ -117,6 +117,8 @@ class AutoAttack():
                         batch_datapoint_idcs.squeeze_(-1)
                     x = x_orig[batch_datapoint_idcs, :].clone().to(self.device)
                     y = y_orig[batch_datapoint_idcs].clone().to(self.device)
+                    adv_mask = mask_orig[batch_datapoint_idcs].clone().to(self.device)
+                    assert y.size(0) == adv_mask.size(0)
 
                     # make sure that x is a 4d tensor even if there is only a single datapoint left
                     if len(x.shape) == 3:
@@ -127,36 +129,36 @@ class AutoAttack():
                         # apgd on cross-entropy loss
                         self.apgd.loss = 'ce'
                         self.apgd.seed = self.get_seed()
-                        _, adv_curr = self.apgd.perturb(x, y, cheap=True)
+                        _, adv_curr = self.apgd.perturb(x, y, adv_mask, cheap=True)
                     
                     elif attack == 'apgd-dlr':
                         # apgd on dlr loss
                         self.apgd.loss = 'dlr'
                         self.apgd.seed = self.get_seed()
-                        _, adv_curr = self.apgd.perturb(x, y, cheap=True)
+                        _, adv_curr = self.apgd.perturb(x, y, adv_mask, cheap=True)
                     
                     elif attack == 'fab':
                         # fab
                         self.fab.targeted = False
                         self.fab.seed = self.get_seed()
-                        adv_curr = self.fab.perturb(x, y)
+                        adv_curr = self.fab.perturb(x, y, adv_mask)
                     
                     elif attack == 'square':
                         # square
                         self.square.seed = self.get_seed()
-                        adv_curr = self.square.perturb(x, y)
+                        adv_curr = self.square.perturb(x, y, adv_mask)
                     
                     elif attack == 'apgd-t':
                         # targeted apgd
                         self.apgd_targeted.seed = self.get_seed()
-                        _, adv_curr = self.apgd_targeted.perturb(x, y, cheap=True)
+                        _, adv_curr = self.apgd_targeted.perturb(x, y, adv_mask, cheap=True)
                     
                     elif attack == 'fab-t':
                         # fab targeted
                         self.fab.targeted = True
                         self.fab.n_restarts = 1
                         self.fab.seed = self.get_seed()
-                        adv_curr = self.fab.perturb(x, y)
+                        adv_curr = self.fab.perturb(x, y, adv_mask)
                     
                     else:
                         raise ValueError('Attack not supported')
