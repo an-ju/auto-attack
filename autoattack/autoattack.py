@@ -95,8 +95,10 @@ class AutoAttack():
                     
             x_adv = x_orig.clone().detach()
             startt = time.time()
+            robust_flags_all = robust_flags.clone().detach()
             for attack in self.attacks_to_run:
                 # item() is super important as pytorch int division uses floor rounding
+                robust_flags = torch.ones_like(robust_flags, dtype=torch.bool)
                 num_robust = torch.sum(robust_flags).item()
 
                 if num_robust == 0:
@@ -129,7 +131,7 @@ class AutoAttack():
                         # apgd on cross-entropy loss
                         self.apgd.loss = 'ce'
                         self.apgd.seed = self.get_seed()
-                        _, adv_curr = self.apgd.perturb(x, y, adv_mask, cheap=True)
+                        _, adv_curr = self.apgd.perturb(x, y, adv_mask, cheap=True, best_loss=True)
                     
                     elif attack == 'apgd-dlr':
                         # apgd on dlr loss
@@ -167,6 +169,7 @@ class AutoAttack():
                     false_batch = ~y.eq(output.max(dim=1)[1]).to(robust_flags.device)
                     non_robust_lin_idcs = batch_datapoint_idcs[false_batch]
                     robust_flags[non_robust_lin_idcs] = False
+                    robust_flags_all = robust_flags_all & robust_flags
 
                     x_adv[non_robust_lin_idcs] = adv_curr[false_batch].detach().to(x_adv.device)
                 
@@ -175,11 +178,15 @@ class AutoAttack():
                         self.logger.log('{} - {}/{} - {} out of {} successfully perturbed'.format(
                             attack, batch_idx + 1, n_batches, num_non_robust_batch, x.shape[0]))
                 
-                robust_accuracy = torch.sum(robust_flags).item() / x_orig.shape[0]
+                total_accuracy = torch.sum(robust_flags).item() / x_orig.shape[0]
+                robust_accuracy = torch.sum(robust_flags[~mask_orig]).item() / x_orig[~mask_orig].shape[0]
+                total_accuracy_all = torch.sum(robust_flags_all).item() / x_orig.shape[0]
+                robust_accuracy_all = torch.sum(robust_flags_all[~mask_orig]).item() / x_orig[~mask_orig].shape[0]
                 if self.verbose:
-                    self.logger.log('robust accuracy after {}: {:.2%} (total time {:.1f} s)'.format(
-                        attack.upper(), robust_accuracy, time.time() - startt))
-                    
+                    self.logger.log('Attack {}. Total accuracy {:.2%}. Robust accuracy {:.2%}. Total time {:.1f} s.'.format(
+                        attack.upper(), total_accuracy, robust_accuracy, time.time() - startt))
+                    self.logger.log('Overall. Total accuracy {:.2%}. Robust accuracy {:.2%}. Total time {:.1f} s.'.format(
+                        total_accuracy, robust_accuracy_all, time.time() - startt))
             # final check
             if self.verbose:
                 if self.norm == 'Linf':

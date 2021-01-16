@@ -30,9 +30,20 @@ if __name__ == '__main__':
     model = ResNet18()
     ckpt = torch.load(args.model)
     model.load_state_dict(ckpt)
-    model.cuda()
-    model.eval()
 
+    class BSChecker(nn.Module):
+        def __init__(self, m, bs):
+            super(BSChecker, self).__init__()
+            self.m = m
+            self.bs = bs
+        
+        def forward(self, x):
+            assert x.size(0) == self.bs
+            return self.m(x)
+
+    model = BSChecker(model, args.batch_size)
+    model.eval()
+    model.cuda()
     # load data
     transform_list = [transforms.ToTensor()]
     transform_chain = transforms.Compose(transform_list)
@@ -55,9 +66,9 @@ if __name__ == '__main__':
     
     # example of custom version
     if args.version == 'custom':
-        adversary.attacks_to_run = ['apgd-ce', 'fab']
+        adversary.attacks_to_run = ['apgd-ce', 'apgd-t', 'fab-t']
         adversary.apgd.n_restarts = 2
-        adversary.fab.n_restarts = 2
+        # adversary.fab.n_restarts = 2
     
     # run attack and save images
     with torch.no_grad():

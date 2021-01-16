@@ -202,16 +202,14 @@ class SquareAttack():
                 s_init = int(math.sqrt(self.p_init * n_features / c))
                 
                 for i_iter in range(self.n_queries):
-                    idx_to_fool = (margin_min > 0.0).nonzero().squeeze()
-                    
-                    x_curr = self.check_shape(x[idx_to_fool])
-                    x_best_curr = self.check_shape(x_best[idx_to_fool])
-                    y_curr = y[idx_to_fool]
-                    curr_adv_mask = adv_mask[idx_to_fool]
+                    x_curr = self.check_shape(x)
+                    x_best_curr = self.check_shape(x_best)
+                    y_curr = y
+                    curr_adv_mask = adv_mask
                     if len(y_curr.shape) == 0:
                         y_curr = y_curr.unsqueeze(0)
-                    margin_min_curr = margin_min[idx_to_fool]
-                    loss_min_curr = loss_min[idx_to_fool]
+                    margin_min_curr = margin_min
+                    loss_min_curr = loss_min
                     
                     p = self.p_selection(i_iter)
                     s = max(int(round(math.sqrt(p * n_features / c))), 1)
@@ -222,17 +220,16 @@ class SquareAttack():
                         ] = 2. * self.eps * self.random_choice([c, 1, 1])
                     
                     x_new = x_best_curr + new_deltas
-                    x_new = torch.min(torch.max(x_new, x_curr - self.eps),
-                        x_curr + self.eps)
+                    x_new = torch.min(torch.max(x_new, x_curr - self.eps), x_curr + self.eps)
                     x_new = torch.clamp(x_new, 0., 1.)
                     x_new = self.check_shape(x_new)
                     
-                    margin, loss = self.margin_and_loss(x_new, y_curr, x[idx_to_fool], curr_adv_mask)
+                    margin, loss = self.margin_and_loss(x_new, y_curr, x, curr_adv_mask)
 
                     # update loss if new loss is better
                     idx_improved = (loss < loss_min_curr).float()
 
-                    loss_min[idx_to_fool] = idx_improved * loss + (
+                    loss_min = idx_improved * loss + (
                         1. - idx_improved) * loss_min_curr
 
                     # update margin and x_best if new loss is better
@@ -240,13 +237,13 @@ class SquareAttack():
                     idx_miscl = (margin <= 0.).float()
                     idx_improved = torch.max(idx_improved, idx_miscl)
 
-                    margin_min[idx_to_fool] = idx_improved * margin + (
+                    margin_min = idx_improved * margin + (
                         1. - idx_improved) * margin_min_curr
                     idx_improved = idx_improved.reshape([-1,
                         *[1]*len(x.shape[:-1])])
-                    x_best[idx_to_fool] = idx_improved * x_new + (
+                    x_best = idx_improved * x_new + (
                         1. - idx_improved) * x_best_curr
-                    n_queries[idx_to_fool] += 1.
+                    n_queries += 1.
 
                     ind_succ = (margin_min <= 0.).nonzero().squeeze()
                     if self.verbose and ind_succ.numel() != 0:
@@ -279,21 +276,19 @@ class SquareAttack():
 
                 x_best = torch.clamp(x + self.normalize(delta_init
                     ) * self.eps, 0., 1.)
-                margin_min, loss_min = self.margin_and_loss(x_best, y, x[idx_to_fool], curr_adv_mask)
+                margin_min, loss_min = self.margin_and_loss(x_best, y, x, curr_adv_mask)
                 n_queries = torch.ones(x.shape[0]).to(self.device)
                 s_init = int(math.sqrt(self.p_init * n_features / c))
 
                 for i_iter in range(self.n_queries):
-                    idx_to_fool = (margin_min > 0.0).nonzero().squeeze()
-
-                    x_curr = self.check_shape(x[idx_to_fool])
-                    x_best_curr = self.check_shape(x_best[idx_to_fool])
-                    y_curr = y[idx_to_fool]
+                    x_curr = self.check_shape(x)
+                    x_best_curr = self.check_shape(x_best)
+                    y_curr = y
                     if len(y_curr.shape) == 0:
                         y_curr = y_curr.unsqueeze(0)
-                    curr_adv_mask = adv_mask[idx_to_fool]
-                    margin_min_curr = margin_min[idx_to_fool]
-                    loss_min_curr = loss_min[idx_to_fool]
+                    curr_adv_mask = adv_mask
+                    margin_min_curr = margin_min
+                    loss_min_curr = loss_min
 
                     delta_curr = x_best_curr - x_curr
                     p = self.p_selection(i_iter)
@@ -337,12 +332,12 @@ class SquareAttack():
                     x_new = self.check_shape(x_new)
                     norms_image = self.lp_norm(x_new - x_curr)
 
-                    margin, loss = self.margin_and_loss(x_new, y_curr, x[idx_to_fool][curr_adv_mask])
+                    margin, loss = self.margin_and_loss(x_new, y_curr, x[curr_adv_mask])
 
                     # update loss if new loss is better
                     idx_improved = (loss < loss_min_curr).float()
 
-                    loss_min[idx_to_fool] = idx_improved * loss + (
+                    loss_min = idx_improved * loss + (
                         1. - idx_improved) * loss_min_curr
 
                     # update margin and x_best if new loss is better
@@ -350,13 +345,13 @@ class SquareAttack():
                     idx_miscl = (margin <= 0.).float()
                     idx_improved = torch.max(idx_improved, idx_miscl)
 
-                    margin_min[idx_to_fool] = idx_improved * margin + (
+                    margin_min = idx_improved * margin + (
                         1. - idx_improved) * margin_min_curr
                     idx_improved = idx_improved.reshape([-1,
                         *[1]*len(x.shape[:-1])])
-                    x_best[idx_to_fool] = idx_improved * x_new + (
+                    x_best = idx_improved * x_new + (
                         1. - idx_improved) * x_best_curr
-                    n_queries[idx_to_fool] += 1.
+                    n_queries += 1.
 
                     ind_succ = (margin_min <= 0.).nonzero().squeeze()
                     if self.verbose and ind_succ.numel() != 0:
@@ -416,30 +411,22 @@ class SquareAttack():
         torch.cuda.random.manual_seed(self.seed)
 
         for counter in range(self.n_restarts):
-            ind_to_fool = acc.nonzero().squeeze()
-            if len(ind_to_fool.shape) == 0:
-                ind_to_fool = ind_to_fool.unsqueeze(0)
-            if ind_to_fool.numel() != 0:
-                x_to_fool = x[ind_to_fool].clone()
-                y_to_fool = y[ind_to_fool].clone()
-                adv_mask_i = adv_mask[ind_to_fool]
+            _, adv_curr = self.attack_single_run(x, y, adv_mask)
 
-                _, adv_curr = self.attack_single_run(x_to_fool, y_to_fool, adv_mask_i)
+            output_curr = self.predict(adv_curr)
+            if not self.targeted:
+                acc_curr = output_curr.max(1)[1] == y 
+            else:
+                acc_curr = output_curr.max(1)[1] != y
+            ind_curr = (acc_curr == 0).nonzero().squeeze()
 
-                output_curr = self.predict(adv_curr)
-                if not self.targeted:
-                    acc_curr = output_curr.max(1)[1] == y_to_fool
-                else:
-                    acc_curr = output_curr.max(1)[1] != y_to_fool
-                ind_curr = (acc_curr == 0).nonzero().squeeze()
-
-                acc[ind_to_fool[ind_curr]] = 0
-                adv[ind_to_fool[ind_curr]] = adv_curr[ind_curr].clone()
-                if self.verbose:
-                    print('restart {} - robust accuracy: {:.2%}'.format(
-                        counter, acc.float().mean()),
-                        '- cum. time: {:.1f} s'.format(
-                        time.time() - startt))
+            acc[ind_curr] = 0
+            adv[ind_curr] = adv_curr[ind_curr].clone()
+            if self.verbose:
+                print('restart {} - robust accuracy: {:.2%}'.format(
+                    counter, acc.float().mean()),
+                    '- cum. time: {:.1f} s'.format(
+                    time.time() - startt))
 
         return adv
 

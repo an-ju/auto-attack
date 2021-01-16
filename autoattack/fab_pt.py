@@ -332,10 +332,10 @@ class FABAttack():
 
         startt = time.time()
         # runs the attack only on correctly classified points
-        im2 = x[pred].detach().clone()
-        la2 = y[pred].detach().clone()
-        adv_mask2 = adv_mask[pred].detach()
-        la_target2 = la_target[pred].detach().clone()
+        im2 = x.detach().clone()
+        la2 = y.detach().clone()
+        adv_mask2 = adv_mask.detach()
+        la_target2 = la_target.detach().clone()
         if len(im2.shape) == self.ndims:
             im2 = im2.unsqueeze(0)
         bs = im2.shape[0]
@@ -481,9 +481,9 @@ class FABAttack():
                   ' (on correctly classified points) in {:.1f} s'
                   .format(time.time() - startt))
 
-        res_c[pred] = res2 * ind_succ.float() + 1e10 * (1 - ind_succ.float())
+        res_c = res2 * ind_succ.float() + 1e10 * (1 - ind_succ.float())
         ind_succ = self.check_shape(ind_succ.nonzero().squeeze())
-        adv_c[pred[ind_succ]] = adv[ind_succ].clone()
+        adv_c[ind_succ] = adv[ind_succ].clone()
 
         return adv_c
 
@@ -499,53 +499,43 @@ class FABAttack():
 
             if not self.targeted:
                 for counter in range(self.n_restarts):
-                    ind_to_fool = acc.nonzero().squeeze()
-                    if len(ind_to_fool.shape) == 0: ind_to_fool = ind_to_fool.unsqueeze(0)
-                    if ind_to_fool.numel() != 0:
-                        x_to_fool, y_to_fool = x[ind_to_fool].clone(), y[ind_to_fool].clone()
-                        adv_mask_i = adv_mask[ind_to_fool]
-                        adv_curr = self.attack_single_run(x_to_fool, y_to_fool, adv_mask_i, use_rand_start=(counter > 0))
+                    adv_curr = self.attack_single_run(x, y, adv_mask, use_rand_start=(counter > 0))
 
-                        acc_curr = self.predict(adv_curr).max(1)[1] == y_to_fool
-                        if self.norm == 'Linf':
-                            res = (x_to_fool - adv_curr).abs().view(x_to_fool.shape[0], -1).max(1)[0]
-                        elif self.norm == 'L2':
-                            res = ((x_to_fool - adv_curr) ** 2).view(x_to_fool.shape[0], -1).sum(dim=-1).sqrt()
-                        acc_curr = torch.max(acc_curr, res > self.eps)
+                    acc_curr = self.predict(adv_curr).max(1)[1] == y 
+                    if self.norm == 'Linf':
+                        res = (x - adv_curr).abs().view(x.shape[0], -1).max(1)[0]
+                    elif self.norm == 'L2':
+                        res = ((x - adv_curr) ** 2).view(x.shape[0], -1).sum(dim=-1).sqrt()
+                    acc_curr = torch.max(acc_curr, res > self.eps)
 
-                        ind_curr = (acc_curr == 0).nonzero().squeeze()
-                        acc[ind_to_fool[ind_curr]] = 0
-                        adv[ind_to_fool[ind_curr]] = adv_curr[ind_curr].clone()
+                    ind_curr = (acc_curr == 0).nonzero().squeeze()
+                    acc[ind_curr] = 0
+                    adv[ind_curr] = adv_curr[ind_curr].clone()
 
-                        if self.verbose:
-                            print('restart {} - robust accuracy: {:.2%} at eps = {:.5f} - cum. time: {:.1f} s'.format(
-                                counter, acc.float().mean(), self.eps, time.time() - startt))
+                    if self.verbose:
+                        print('restart {} - robust accuracy: {:.2%} at eps = {:.5f} - cum. time: {:.1f} s'.format(
+                            counter, acc.float().mean(), self.eps, time.time() - startt))
 
             else:
                 for target_class in range(2, self.n_target_classes + 2):
                     self.target_class = target_class
                     for counter in range(self.n_restarts):
-                        ind_to_fool = acc.nonzero().squeeze()
-                        if len(ind_to_fool.shape) == 0: ind_to_fool = ind_to_fool.unsqueeze(0)
-                        if ind_to_fool.numel() != 0:
-                            x_to_fool, y_to_fool = x[ind_to_fool].clone(), y[ind_to_fool].clone()
-                            adv_mask_i = adv_mask[ind_to_fool]
-                            adv_curr = self.attack_single_run_targeted(x_to_fool, y_to_fool, adv_mask_i, use_rand_start=(counter > 0))
+                        adv_curr = self.attack_single_run_targeted(x, y, adv_mask, use_rand_start=(counter > 0))
 
-                            acc_curr = self.predict(adv_curr).max(1)[1] == y_to_fool
-                            if self.norm == 'Linf':
-                                res = (x_to_fool - adv_curr).abs().view(x_to_fool.shape[0], -1).max(1)[0]
-                            elif self.norm == 'L2':
-                                res = ((x_to_fool - adv_curr) ** 2).view(x_to_fool.shape[0], -1).sum(dim=-1).sqrt()
-                            acc_curr = torch.max(acc_curr, res > self.eps)
+                        acc_curr = self.predict(adv_curr).max(1)[1] == y
+                        if self.norm == 'Linf':
+                            res = (x - adv_curr).abs().view(x.shape[0], -1).max(1)[0]
+                        elif self.norm == 'L2':
+                            res = ((x - adv_curr) ** 2).view(x.shape[0], -1).sum(dim=-1).sqrt()
+                        acc_curr = torch.max(acc_curr, res > self.eps)
 
-                            ind_curr = (acc_curr == 0).nonzero().squeeze()
-                            acc[ind_to_fool[ind_curr]] = 0
-                            adv[ind_to_fool[ind_curr]] = adv_curr[ind_curr].clone()
+                        ind_curr = (acc_curr == 0).nonzero().squeeze()
+                        acc[ind_curr] = 0
+                        adv[ind_curr] = adv_curr[ind_curr].clone()
 
-                            if self.verbose:
-                                print('restart {} - target_class {} - robust accuracy: {:.2%} at eps = {:.5f} - cum. time: {:.1f} s'.format(
-                                    counter, self.target_class, acc.float().mean(), self.eps, time.time() - startt))
+                        if self.verbose:
+                            print('restart {} - target_class {} - robust accuracy: {:.2%} at eps = {:.5f} - cum. time: {:.1f} s'.format(
+                                counter, self.target_class, acc.float().mean(), self.eps, time.time() - startt))
 
         return adv
 
